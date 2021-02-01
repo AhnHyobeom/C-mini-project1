@@ -658,7 +658,7 @@ void closing() {//팽창 후 침식
 	printBufDisplayImage();
 }
 
-void calculClosing() {//침식 연산 outImage -> printBufImage
+void calculClosing() {//침식 연산 outImage ->  printBufImage
 	//이미지 복원을 위해 마스크를 약하게 설정
 
 	int erosionMask[3][3] = { //마스크 설정
