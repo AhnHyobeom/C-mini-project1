@@ -9,34 +9,31 @@
 #include <io.h>
 
 /////// 함수 선언부 (이름만 나열)
-void print_menu();
-void openImage();
-unsigned char** malloc2D(int, int);
-void displayImage();
-void freeInputImage();
-void freeOutputImage();
-void equal_image();
-void saveImage();
+void print_menu();	void openImage();	unsigned char** malloc2D(int, int);
+void displayImage();	void freeInputImage();	void freeOutputImage();
+void equal_image();	void saveImage();
 //화소점처리
-void bw_image();
-void brightImage();
-void reverseImage();
+void bw_image();	void brightImage();	void reverseImage();
 //기하학 처리
-void sizeUpImage();
-void sizeDownImage();
-void rotateImage();
+void sizeUpImage();	void sizeDownImage();	void rotateImage();
 void calculRotate(int rotate);//회전 계산 함수
 //영역 처리
-void low_high_passFilter();
+void low_high_passFilter();//blurring(이미지를 뿌옇게) && Sharpening(경계 검출) 
 void medianFilter();
 void salt_pepper();//medianFilter를 위해 잡음 추가
-void noiseDisplayImage();//잡음 추가된 이미지와 medianFilter로 제거된 이미지 동시 출력
+void printBufDisplayImage();//잡음 추가된 이미지와 medianFilter로 제거된 이미지 동시 출력
 //Morphology
-void erosion();//침식 (경계선 처리를 하지 않아 경계선이 생김)
-void dilation();//팽창
+void erosion();//침식 알고리즘 검은색 바탕에 하얀색 잡음 제거
+void calculErosion();
+void dilation();//팽창 알고리즘 하얀색 바탕에 검은색 잡음 제거
+void calculDilation();
+void opening();//침식 후 팽창 (작은 하얀색 객체 제거, 이미지 보존)
+void closing();//팽창 후 침식 (작은 검은색 객체 제거, 이미지 보존)
+void calculOpening();
+void calculClosing();
 
 /////// 전역변수 선언부
-unsigned char** inImage = NULL, ** outImage = NULL, ** noiseImage = NULL;
+unsigned char** inImage = NULL, ** outImage = NULL, ** printBufImage = NULL;
 int inH = 0, inW = 0, outH = 0, outW = 0;
 char fileName[200];
 // 윈도 화면용
@@ -66,14 +63,16 @@ void main() {
 		case  'I':  case 'i':	medianFilter();		break;
 		case  'J':  case 'j':	erosion();			break;
 		case  'K':  case 'k':	dilation();			break;
+		case  'L':  case 'l':	opening();			break;
+		case  'M':  case 'm':	closing();			break;
 		default: "키를 잘못 누름...";
 		}
-		if (noiseImage != NULL) {
+		if (printBufImage != NULL) {
 			for (int i = 0; i < outH; i++) {
-				free(noiseImage[i]);
+				free(printBufImage[i]);
 			}
-			free(noiseImage);
-			noiseImage = NULL;
+			free(printBufImage);
+			printBufImage = NULL;
 		}
 	}
 	freeInputImage();
@@ -109,7 +108,7 @@ void print_menu() {
 	puts("A.원본 B.밝게/어둡게 C.반전 D.흑백");
 	puts("E.확대 F.축소 G.회전(시계방향으로 회전)");
 	puts("H.low or high pass filter I.median filter J.erosion");
-	puts("K.dilation");
+	puts("K.dilation L.opening M.closing");
 }
 void openImage() {
 	// 파일이름을 입력 받기.
@@ -353,6 +352,8 @@ void calculRotate(int degree) {//회전 계산 알고리즘
 	int new_w;
 	int new_h;
 	double pi = 3.141592;
+	// -degree 반시계 방향 회전
+	// degree 시계 방향 회전
 	double seta = pi / (180.0 / degree);
 	//회전 알고리즘
 	for (int i = 0; i < inH; i++) {
@@ -438,7 +439,7 @@ void low_high_passFilter() {
 	displayImage();
 }
 
-void medianFilter() {//노이즈 제거 알고리즘
+void medianFilter() {//노이즈 제거 알고리즘 노이즈 이미지 저장기능 구현하지 않음
 	if (inImage == NULL) {
 		return;
 	}
@@ -457,7 +458,7 @@ void medianFilter() {//노이즈 제거 알고리즘
 			int temp = 0;//임시변수(배열 인덱스 값)
 			for (int k = 0; k < 3; k++) {
 				for (int m = 0; m < 3; m++) {
-					medianSort[temp++] = noiseImage[i - 1 + k][j - 1 + m];
+					medianSort[temp++] = printBufImage[i - 1 + k][j - 1 + m];
 				}
 			}
 			for (int k = 0; k < 9; k++) {// 버블 정렬
@@ -473,18 +474,18 @@ void medianFilter() {//노이즈 제거 알고리즘
 			outImage[i][j] = medianSort[4];//중간 값으로 출력
 		}
 	}
-	noiseDisplayImage();
+	printBufDisplayImage();
 }
 
 void salt_pepper(int noiseCount) {//영상에 잡음 추가
 	srand(time(NULL));
 	int salt_or_pepper;
 	int row, col;
-	noiseImage = malloc2D(inH, inW);
+	printBufImage = malloc2D(inH, inW);
 
 	for (int i = 0; i < outH; i++) {
 		for (int j = 0; j < outW; j++) {
-			noiseImage[i][j] = inImage[i][j];
+			printBufImage[i][j] = inImage[i][j];
 		}
 	}
 	//잡음 추가
@@ -493,16 +494,16 @@ void salt_pepper(int noiseCount) {//영상에 잡음 추가
 		col = rand() % inW;
 		// 랜덤하게 0 또는 255, 0이면 후추, 255면 소금
 		salt_or_pepper = (rand() % 2) * 255;
-		noiseImage[row][col] = salt_or_pepper;
+		printBufImage[row][col] = salt_or_pepper;
 	}
 }
 
-void noiseDisplayImage() {
+void printBufDisplayImage() {
 	system("cls");
 	unsigned char px;
 	for (int i = 0; i < outH; i++) {
 		for (int j = 0; j < outW; j++) {
-			px = noiseImage[i][j];//잡음 이미지 출력
+			px = printBufImage[i][j];//잡음 이미지 출력
 			SetPixel(hdc, j + 80, i + 220, RGB(px, px, px));
 			px = outImage[i][j];//잡음 제거 이미지 출력
 			SetPixel(hdc, j + 160 + inH, i + 220, RGB(px, px, px));
@@ -510,7 +511,8 @@ void noiseDisplayImage() {
 	}
 }
 
-void erosion() {//침식 알고리즘 (2진화된 영상으로 봐야 뚜렷함)
+void erosion() {//침식 알고리즘 (2진화된 영상으로 봐야함)
+	//검은색 바탕에 하얀색 잡음 제거
 	if (inImage == NULL) {
 		return;
 	}
@@ -518,34 +520,42 @@ void erosion() {//침식 알고리즘 (2진화된 영상으로 봐야 뚜렷함)
 	outH = inH;
 	outW = inW;
 	outImage = malloc2D(outH, outW);
-	int erosionMask[3][3] = { //마스크 설정
-		{0, 1, 0},
-		{1, 1, 1},
-		{0, 1, 0} };
-	int isErosion;
-	for (int i = 1; i < inH - 1; i++) {//엣지는 처리하지 않음
-		for (int j = 1; j < inW - 1; j++) {
+	calculErosion();
+	displayImage();
+}
+
+void calculErosion() {
+	int erosionMask[5][5] = { //마스크 설정
+		{1, 1, 1, 1, 1},
+		{1, 1, 1, 1, 1},
+		{1, 1, 1, 1, 1},
+		{1, 1, 1, 1, 1},
+		{1, 1, 1, 1, 1} };
+	unsigned char isErosion;
+	for (int i = 2; i < inH - 2; i++) {//엣지는 처리하지 않음
+		for (int j = 2; j < inW - 2; j++) {
 			isErosion = 255;
-			for (int k = 0; k < 3; k++) {
-				for (int m = 0; m < 3; m++) {
-					if (erosionMask[k][m] == 1) {//mask 값이 1이고
-						if (inImage[i - 1 + k][j - 1 + m] == 0) {//이미지가 0이라면
-							isErosion = 0;//침식
-							outImage[i][j] = isErosion;
-							break;
-						}
+			for (int k = 0; k < 5; k++) {
+				for (int m = 0; m < 5; m++) {
+					if (inImage[i - 2 + k][j - 2 + m] == 0) {//이미지가 0이라면
+						isErosion = 0;//침식
+						outImage[i][j] = isErosion;
+						break;
 					}
 				}
 				if (isErosion == 0) {
 					break;
 				}
 			}
+			if (isErosion == 255) {//마스크를 모두 통과했다면
+				outImage[i][j] = isErosion;
+			}
 		}
 	}
-	displayImage();
 }
 
-void dilation() {//팽창 알고리즘 (2진화된 영상으로 봐야 뚜렷함)
+void dilation() {//팽창 알고리즘 (2진화된 영상으로 봐야함)
+	//하얀색 바탕에 검은색 잡음 제거
 	if (inImage == NULL) {
 		return;
 	}
@@ -553,6 +563,57 @@ void dilation() {//팽창 알고리즘 (2진화된 영상으로 봐야 뚜렷함)
 	outH = inH;
 	outW = inW;
 	outImage = malloc2D(outH, outW);
+	calculDilation();
+	displayImage();
+}
+
+void calculDilation() {
+	int dilationMask[5][5] = { //마스크 설정
+		{0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0} };
+	int isDilation;
+	for (int i = 2; i < inH - 2; i++) {//엣지는 처리하지 않음
+		for (int j = 2; j < inW - 2; j++) {
+			isDilation = 0;
+			for (int k = 0; k < 5; k++) {
+				for (int m = 0; m < 5; m++) {
+					if (inImage[i - 2 + k][j - 2 + m] == 255) {//이미지가 255라면
+						isDilation = 255;//팽창
+						outImage[i][j] = isDilation;
+						break;
+					}
+				}
+				if (isDilation == 255) {
+					break;
+				}
+			}
+			if (isDilation == 0) {//마스크를 모두 통과했다면
+				outImage[i][j] = isDilation;
+			}
+		}
+	}
+}
+
+void opening() {//침식 후 팽창
+	//2개의 이미지 중 왼쪽 이미지가 opening 오른쪽은 침식 이미지
+	if (inImage == NULL) {
+		return;
+	}
+	freeOutputImage();
+	outH = inH;
+	outW = inW;
+	outImage = malloc2D(outH, outW);
+	printBufImage = malloc2D(outH, outW);
+	calculErosion();
+	calculOpening();
+	printBufDisplayImage();
+}
+
+void calculOpening() { //팽창 연산 outImage -> printBufImage
+	//이미지 복원을 위해 마스크를 약하게 설정
 	int dilationMask[3][3] = { //마스크 설정
 		{0, 1, 0},
 		{1, 1, 1},
@@ -564,9 +625,9 @@ void dilation() {//팽창 알고리즘 (2진화된 영상으로 봐야 뚜렷함)
 			for (int k = 0; k < 3; k++) {
 				for (int m = 0; m < 3; m++) {
 					if (dilationMask[k][m] == 1) {//mask 값이 1이고
-						if (inImage[i - 1 + k][j - 1 + m] == 255) {//이미지가 255라면
+						if (outImage[i - 1 + k][j - 1 + m] == 255) {//이미지가 255라면
 							isDilation = 255;//팽창
-							outImage[i][j] = isDilation;
+							printBufImage[i][j] = isDilation;
 							break;
 						}
 					}
@@ -575,7 +636,56 @@ void dilation() {//팽창 알고리즘 (2진화된 영상으로 봐야 뚜렷함)
 					break;
 				}
 			}
+			if (isDilation == 0) {//마스크를 모두 통과했다면
+				printBufImage[i][j] = isDilation;
+			}
 		}
 	}
-	displayImage();
+}
+
+void closing() {//팽창 후 침식
+	//2개의 이미지 중 왼쪽 이미지가 closing 오른쪽은 팽창 이미지
+	if (inImage == NULL) {
+		return;
+	}
+	freeOutputImage();
+	outH = inH;
+	outW = inW;
+	outImage = malloc2D(outH, outW);
+	printBufImage = malloc2D(outH, outW);
+	calculDilation();
+	calculClosing();
+	printBufDisplayImage();
+}
+
+void calculClosing() {//침식 연산 outImage -> printBufImage
+	//이미지 복원을 위해 마스크를 약하게 설정
+
+	int erosionMask[3][3] = { //마스크 설정
+		{0, 1, 0},
+		{1, 1, 1},
+		{0, 1, 0} };
+	unsigned char isErosion;
+	for (int i = 1; i < inH - 1; i++) {//엣지는 처리하지 않음
+		for (int j = 1; j < inW - 1; j++) {
+			isErosion = 255;
+			for (int k = 0; k < 3; k++) {
+				for (int m = 0; m < 3; m++) {
+					if (erosionMask[k][m] == 1) {
+						if (outImage[i - 1 + k][j - 1 + m] == 0) {//이미지가 0이라면
+							isErosion = 0;//침식
+							printBufImage[i][j] = isErosion;
+							break;
+						}
+					}
+				}
+				if (isErosion == 0) {
+					break;
+				}
+			}
+			if (isErosion == 255) {//마스크를 모두 통과했다면
+				printBufImage[i][j] = isErosion;
+			}
+		}
+	}
 }
